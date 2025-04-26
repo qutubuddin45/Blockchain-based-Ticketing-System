@@ -6,6 +6,7 @@ contract TicketingSystem {
     uint256 public ticketPrice;
     uint256 public totalTickets;
     uint256 public ticketsSold;
+    bool public isPaused;
 
     mapping(address => uint256) public ticketsOwned;
 
@@ -16,11 +17,15 @@ contract TicketingSystem {
     event TicketPriceChanged(uint256 oldPrice, uint256 newPrice);
     event TotalTicketsChanged(uint256 oldTotal, uint256 newTotal);
     event OwnershipTransferred(address indexed previousOwner, address indexed newOwner);
+    event ContractPaused(bool isPaused);
+    event TicketBurned(address indexed holder, uint256 quantity);
+    event EmergencyWithdrawal(address indexed owner, uint256 amount);
 
     constructor(uint256 _ticketPrice, uint256 _totalTickets) {
         owner = msg.sender;
         ticketPrice = _ticketPrice;
         totalTickets = _totalTickets;
+        isPaused = false;
     }
 
     modifier onlyOwner() {
@@ -28,10 +33,23 @@ contract TicketingSystem {
         _;
     }
 
-    function buyTicket(uint256 _quantity) external payable {
+    modifier whenNotPaused() {
+        require(!isPaused, "Ticket sales are paused");
+        _;
+    }
+
+    function buyTicket(uint256 _quantity) external payable whenNotPaused {
         require(_quantity > 0, "Quantity must be greater than 0");
         require(ticketsSold + _quantity <= totalTickets, "Not enough tickets available");
-        require(msg.value == ticketPrice * _quantity, "Incorrect Ether sent");
+        
+        uint256 priceToPay = ticketPrice * _quantity;
+
+        // Discount: 5% off if buying 5 or more tickets
+        if (_quantity >= 5) {
+            priceToPay = (priceToPay * 95) / 100;  // 5% discount
+        }
+
+        require(msg.value == priceToPay, "Incorrect Ether sent");
 
         ticketsOwned[msg.sender] += _quantity;
         ticketsSold += _quantity;
@@ -72,9 +90,6 @@ contract TicketingSystem {
         emit FundsWithdrawn(owner, amount);
     }
 
-    // ✅ NEW FUNCTIONS
-
-    // Change ticket price (only owner)
     function setTicketPrice(uint256 _newPrice) external onlyOwner {
         require(_newPrice > 0, "Price must be greater than zero");
         uint256 oldPrice = ticketPrice;
@@ -82,7 +97,6 @@ contract TicketingSystem {
         emit TicketPriceChanged(oldPrice, _newPrice);
     }
 
-    // Change total ticket supply (only owner)
     function setTotalTickets(uint256 _newTotal) external onlyOwner {
         require(_newTotal >= ticketsSold, "Cannot set less than tickets already sold");
         uint256 oldTotal = totalTickets;
@@ -90,16 +104,46 @@ contract TicketingSystem {
         emit TotalTicketsChanged(oldTotal, _newTotal);
     }
 
-    // Check how many tickets a user owns
     function checkTickets(address _user) external view returns (uint256) {
         return ticketsOwned[_user];
     }
 
-    // Transfer contract ownership
     function transferOwnership(address _newOwner) external onlyOwner {
         require(_newOwner != address(0), "Invalid address");
         address previousOwner = owner;
         owner = _newOwner;
         emit OwnershipTransferred(previousOwner, _newOwner);
     }
+
+    // ✅ NEW FUNCTIONS
+
+    function pauseContract(bool _pause) external onlyOwner {
+        isPaused = _pause;
+        emit ContractPaused(_pause);
+    }
+
+    function burnTickets(uint256 _quantity) external {
+        require(_quantity > 0, "Quantity must be greater than 0");
+        require(ticketsOwned[msg.sender] >= _quantity, "Not enough tickets to burn");
+
+        ticketsOwned[msg.sender] -= _quantity;
+        ticketsSold -= _quantity;
+
+        emit TicketBurned(msg.sender, _quantity);
+    }
+
+    function viewContractBalance() external view returns (uint256) {
+        return address(this).balance;
+    }
+
+    function emergencyWithdraw() external onlyOwner {
+        uint256 balance = address(this).balance;
+        payable(owner).transfer(balance);
+        emit EmergencyWithdrawal(owner, balance);
+    }
 }
+
+   
+   
+   
+      
